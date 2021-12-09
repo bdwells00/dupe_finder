@@ -5,7 +5,7 @@ __license__ = 'MIT'
 __origin_date__ = '2021-12-09'
 __prog__ = 'dupef.py'
 __purpose__ = 'duplicate finder: find duplicate files in a folder tree'
-__version__ = '0.0.2'
+__version__ = '0.1.0'
 __version_date__ = '2021-12-09'
 __version_info__ = tuple(int(i) for i in __version__.split('.') if i.isdigit())
 
@@ -48,6 +48,10 @@ def get_args():
                         help='folder to scan for duplicates',
                         metavar=f'{Ct.RED}<path>{Ct.A}',
                         type=str)
+    parser.add_argument('--auto',
+                        help='automatically add the duplicated files to the'
+                             'log file specified with "--log-file <filename>"',
+                        action='store_true')
     parser.add_argument('--exdir',
                         help='comma separated directories to exclude (no '
                              'spaces between directories)',
@@ -92,6 +96,7 @@ def validate_args():
             bp([f'"--{location} {f}" does not exist.', Ct.RED], erl=2)
             sys.exit(1)
         return
+
     if args.folder:
         folder_validation(args.folder, 'folder')
     else:
@@ -282,6 +287,47 @@ def hash_comp(file_dict: dict, file_count, hash_variable):
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
+@perf_timer
+def out_file_check(dupe_f: int, dupe_h: int):
+
+    # ~~~ #             -question-
+    if dupe_f > 100 and not args.log_file:
+        o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
+                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files. '
+                        'Dumping this many to the console might take a long '
+                        'time but no log-file was specified. Do you want to '
+                        f'output to {Ct.GREEN}C{Ct.A}onsole or specify '
+                        f'{Ct.GREEN}L{Ct.A}og-file now?[{Ct.GREEN}C{Ct.A}/'
+                        f'{Ct.GREEN}L{Ct.A}]: ')
+        if o_check.lower() == 'l':
+            # TODO add checks here
+            bp_dict['log_file'] = input('File name: ')
+        elif o_check.lower() != 'c':
+            bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
+            out_file_check(dupe_f, dupe_h)
+    elif dupe_f > 100:
+        o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
+                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files. '
+                        'Dumping this many to the console might take a long. '
+                        f'Do you want to output to {Ct.GREEN}C{Ct.A}onsole or '
+                        f'just the {Ct.GREEN}L{Ct.A}og-file?[{Ct.GREEN}C{Ct.A}'
+                        f'/{Ct.GREEN}L{Ct.A}]: ')
+        if o_check.lower() != 'c':
+            bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
+            out_file_check(dupe_f, dupe_h)
+    else:
+        o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
+                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files. '
+                        f'Do you want to output to {Ct.GREEN}C{Ct.A}onsole or '
+                        f'just the {Ct.GREEN}L{Ct.A}og-file?[{Ct.GREEN}C{Ct.A}'
+                        f'/{Ct.GREEN}L{Ct.A}]: ')
+        if o_check.lower() != 'c' and o_check.lower() != 'l':
+            bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
+            out_file_check(dupe_f, dupe_h)
+    return o_check
+
+
+# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def main():
 
     # ~~~ #             -initial display-
@@ -307,45 +353,98 @@ def main():
     file_size_total = byte_notation(tw_tup[2], ntn=1)
     # print out the tree walk data
     bp([f'Folders: {folder_total} | File Size: {file_size_total[1]:>10} | '
-        f'Files: {file_total}\nDuration: {walk_return[1]:,.4f}', Ct.A], inl=1)
-    bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
+        f'Files: {file_total}\nDuration: {walk_return[1]:,.4f}', Ct.A])
+    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -size comparison-
     size_return = size_comp(tw_tup[1])
     files_stage1_total = size_return[2][1]
     sizes_stage1_total = size_return[2][2]
     # print out the size comp stage 1 comparison
-    bp(['Stage 1 (size) Comparison:\n', Ct.GREEN, 'Total sizes with file '
-        f'matches: {sizes_stage1_total:,}\nTotal files with size matches: '
-        f'{files_stage1_total}\nDuration: {size_return[1]:,.4f}', Ct.A], inl=1)
-    bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
+    bp(['Stage ', Ct.GREEN, '1', Ct.BBLUE, ' (', Ct.GREEN, 'size', Ct.RED,
+        ') Comparison:\n', Ct.GREEN], num=0)
+    bp([f'Total sizes with file matches: {sizes_stage1_total:,}\nTotal files '
+        f'with size matches: {files_stage1_total}\nDuration: '
+        f'{size_return[1]:,.4f}', Ct.A])
+    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -sha256 comparison-
     sha256_return = hash_comp(size_return[2][0], files_stage1_total, 'sha256')
     files_stage2_total = sha256_return[2][1]
     hashes_stage2_total = sha256_return[2][2]
+    dupe_files_stage2 = files_stage2_total - hashes_stage2_total
     # print out the hash comp stage 2 comparison
     bp(['Stage ', Ct.GREEN, '2', Ct.BBLUE, ' (', Ct.GREEN, 'sha256', Ct.RED,
         ') Comparison:\n', Ct.GREEN], num=0)
     bp([f'Total hashes with file matches: {hashes_stage2_total:,}\n'
         f'Total files with hash matches: '
-        f'{files_stage2_total}\nDuration: {sha256_return[1]:,.4f}', Ct.A],
-        inl=1)
-    bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
+        f'{files_stage2_total}\nDuplicate files: {dupe_files_stage2}\n'
+        f'Duration: {sha256_return[1]:,.4f}', Ct.A])
+    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -blake2b comparison-
+    files_stage3_total = 0
     if args.two_hash:
         blake2b_return = hash_comp(size_return[2][0], files_stage1_total,
                                    'blake2b')
         files_stage3_total = blake2b_return[2][1]
         hashes_stage3_total = blake2b_return[2][2]
+        dupe_files_stage3 = files_stage3_total - hashes_stage3_total
         # print out the hash comp stage 2 comparison
         bp(['Stage ', Ct.GREEN, '3', Ct.BBLUE, ' (', Ct.GREEN, 'blake2b',
             Ct.RED, ') Comparison:\n', Ct.GREEN], num=0)
         bp([f'Total hashes with file matches: {hashes_stage3_total:,}\nTotal '
-            f'files with hash matches: {files_stage3_total}\nDuration: '
-            f'{blake2b_return[1]:,.4f}', Ct.A], inl=1)
-        bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
+            f'files with hash matches: {files_stage3_total}\nDuplicate files: '
+            f'{dupe_files_stage3}\nDuration: {blake2b_return[1]:,.4f}', Ct.A])
+        bp([f'\n{"━" * 40}\n', Ct.A], log=0)
+
+    # ~~~ #             -aggregate-
+    hash_level = 3 if args.two_hash else 2
+    if hash_level == 3 and dupe_files_stage3 != dupe_files_stage2:
+        bp([f'hash mismatch!! Stage 2 found: {dupe_files_stage2} | Stage 3 '
+            f'found: {dupe_files_stage3}\nUsing Stage 3 data, but should be'
+            'verified.', Ct.YELLOW], err=1)
+        dupe_files = files_stage3_total
+        dupe_hashes = hashes_stage3_total
+        dupe_dict = blake2b_return[2][0]
+    elif hash_level == 3 and dupe_files_stage3 == dupe_files_stage2:
+        bp([f'Hash lists match. Stage 2 found: {dupe_files_stage2} | Stage 3 '
+            f'found: {dupe_files_stage3}\nUsing Stage 3 data with high '
+            'confidence.', Ct.GREEN])
+        dupe_files = files_stage3_total
+        dupe_hashes = hashes_stage3_total
+        dupe_dict = blake2b_return[2][0]
+    else:
+        bp([f'Stage 2 found: {dupe_files_stage2}\nUsing Stage 2 data with '
+            'reasonable confidence.', Ct.GREEN])
+        dupe_files = files_stage2_total
+        dupe_hashes = hashes_stage2_total
+        dupe_dict = sha256_return[2][0]
+    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
+
+    # ~~~ #             -input-
+    if args.auto:
+        con_out = 0
+    else:
+        input_return = out_file_check(dupe_files, dupe_hashes)
+        if input_return[2].lower() == 'l':
+            con_out = 0
+        else:
+            con_out = 1
+        bp([f'\n{"━" * 40}\n', Ct.A], log=0, fil=0)
+
+    # ~~~ #             -output-
+    bp([f'Files with duplicates: {dupe_hashes} | Total duplicates: '
+        f'{dupe_files - dupe_hashes}\n\n', Ct.A], con=con_out)
+    for k, v in dupe_dict.items():
+        bp([f'{k}', Ct.A], num=0, con=con_out)
+        for entry in v:
+            bp([f'\t{entry}', Ct.GREEN], con=con_out)
+    bp([f'\n{"━" * 40}\n', Ct.A], log=0, con=con_out)
+
+    # ~~~ #             -finish-
+    bp(['Program complete\n\nDuration: '
+        f'{perf_counter() - START_PROG_TIME - input_return[1]:.4f}', Ct.A])
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
