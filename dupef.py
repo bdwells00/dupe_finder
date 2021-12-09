@@ -5,7 +5,7 @@ __license__ = 'MIT'
 __origin_date__ = '2021-12-09'
 __prog__ = 'dupef.py'
 __purpose__ = 'duplicate finder: find duplicate files in a folder tree'
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 __version_date__ = '2021-12-09'
 __version_info__ = tuple(int(i) for i in __version__.split('.') if i.isdigit())
 
@@ -284,10 +284,6 @@ def hash_comp(file_dict: dict, file_count, hash_variable):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def main():
 
-    # ~~~ #             -variables-
-    bp_dict['color'] = 0 if args.no_color else 1
-    bp_dict['log_file'] = args.log_file
-
     # ~~~ #             -initial display-
     bp([f'Program start: {start_time}\nFolder: ', Ct.A, f'{args.folder}\n',
         Ct.GREEN, 'Excluded Folders: ', Ct.A, f'{args.exdir}\n', Ct.GREEN,
@@ -329,11 +325,27 @@ def main():
     files_stage2_total = sha256_return[2][1]
     hashes_stage2_total = sha256_return[2][2]
     # print out the hash comp stage 2 comparison
-    bp(['Stage 2 (sha256) Comparison:\n', Ct.GREEN, 'Total hashes with file '
-        f'matches: {hashes_stage2_total:,}\nTotal files with hash matches: '
+    bp(['Stage ', Ct.GREEN, '2', Ct.BBLUE, ' (', Ct.GREEN, 'sha256', Ct.RED,
+        ') Comparison:\n', Ct.GREEN], num=0)
+    bp([f'Total hashes with file matches: {hashes_stage2_total:,}\n'
+        f'Total files with hash matches: '
         f'{files_stage2_total}\nDuration: {sha256_return[1]:,.4f}', Ct.A],
         inl=1)
     bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
+
+    # ~~~ #             -blake2b comparison-
+    if args.two_hash:
+        blake2b_return = hash_comp(size_return[2][0], files_stage1_total,
+                                   'blake2b')
+        files_stage3_total = blake2b_return[2][1]
+        hashes_stage3_total = blake2b_return[2][2]
+        # print out the hash comp stage 2 comparison
+        bp(['Stage ', Ct.GREEN, '3', Ct.BBLUE, ' (', Ct.GREEN, 'blake2b',
+            Ct.RED, ') Comparison:\n', Ct.GREEN], num=0)
+        bp([f'Total hashes with file matches: {hashes_stage3_total:,}\nTotal '
+            f'files with hash matches: {files_stage3_total}\nDuration: '
+            f'{blake2b_return[1]:,.4f}', Ct.A], inl=1)
+        bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
@@ -342,6 +354,10 @@ if __name__ == '__main__':
     # ~~~ #         args section
     args = get_args()
     validate_args()
+
+    # ~~~ #             -variables-
+    bp_dict['color'] = 0 if args.no_color else 1
+    bp_dict['log_file'] = args.log_file
 
     # ~~~ #         title section
     bp([f'{ver} - {__purpose__}\n', Ct.BBLUE])
