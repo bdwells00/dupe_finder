@@ -1,289 +1,20 @@
 #!/usr/bin/python3-64 -X utf8
 
-__author__ = 'Brandon Wells <wellsb.prog@gmail.com>'
-__license__ = 'MIT'
-__origin_date__ = '2021-12-09'
-__prog__ = 'dupef.py'
-__purpose__ = 'duplicate finder: find duplicate files in a folder tree'
-__version__ = '0.1.0'
-__version_date__ = '2021-12-09'
-__version_info__ = tuple(int(i) for i in __version__.split('.') if i.isdigit())
-
-
-import argparse
-from collections import defaultdict as dd
 from datetime import datetime
-from functools import wraps
-import hashlib
 from time import perf_counter
-import os
-import sys
+from modules.argsval import validate_and_process_args, file_check
 from betterprint.betterprint import bp, bp_dict
 from betterprint.colortext import Ct
+from modules.filechecks import size_comp, hash_comp
+from modules.notations import byte_notation, time_notation
+import modules.options as options
+from modules.timer import perf_timer
+from modules.treewalk import tree_walk
 START_PROG_TIME = perf_counter()
 
 
 # ~~~ #             -global variables-
-ver = f'{__prog__} v{__version__} ({__version_date__})'
 start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def get_args():
-    """Get CLI arguments from argparse.
-
-    Returns:
-        - class 'argparse.ArgumentParser': Command Line Arguments
-    """
-    # Use argparse to capture cli parameters
-    parser = argparse.ArgumentParser(
-        prog=__prog__,
-        description=f'{Ct.BBLUE}{ver}: {__purpose__}{Ct.A}',
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter,
-        epilog=f'{Ct.RED}This program has no warranty. Please use with '
-               f'caution.{Ct.A}',
-        add_help=True)
-    parser.add_argument('-f',
-                        '--folder',
-                        help='folder to scan for duplicates',
-                        metavar=f'{Ct.RED}<path>{Ct.A}',
-                        type=str)
-    parser.add_argument('--auto',
-                        help='automatically add the duplicated files to the'
-                             'log file specified with "--log-file <filename>"',
-                        action='store_true')
-    parser.add_argument('--exdir',
-                        help='comma separated directories to exclude (no '
-                             'spaces between directories)',
-                        metavar=f'{Ct.GREEN}<dir>,<dir>{Ct.A}',
-                        type=str)
-    parser.add_argument('--exfile',
-                        help='comma separated files to exclude (no spaces '
-                             'between files)',
-                        metavar=f'{Ct.GREEN}<file>,<file>{Ct.A}',
-                        type=str)
-    parser.add_argument('--log-file',
-                        help='file to save output',
-                        metavar=f'{Ct.GREEN}<filename>{Ct.A}',
-                        type=str)
-    parser.add_argument('--no-color',
-                        help='don\'t colorize output',
-                        action='store_true')
-    parser.add_argument('--two-hash',
-                        help='also hash with blake2b for increased accuracy',
-                        action='store_true')
-    parser.add_argument('--version',
-                        help='print program version and exit',
-                        action='version',
-                        version=f'{ver}')
-
-    return parser.parse_args()
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def validate_args():
-
-    # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-    def folder_validation(f, location):
-        """Check if the folder exists. Exit if it does not.
-
-        Args:
-            f (string): folder name in string format
-            location (string): 'source' or 'target' being checked to provide
-                            proper error output.
-        """
-        if not os.path.isdir(f):
-            bp([f'"--{location} {f}" does not exist.', Ct.RED], erl=2)
-            sys.exit(1)
-        return
-
-    if args.folder:
-        folder_validation(args.folder, 'folder')
-    else:
-        bp(['target path not provided.', Ct.RED], err=2)
-        sys.exit(1)
-    if args.log_file:
-        if os.path.isfile(args.log_file):
-            bp(['log file exists. Exiting.', Ct.RED], err=2)
-            sys.exit(1)
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def perf_timer(func):
-    """The decorator time function. This is the encapsulating timer
-        functionthat takes one argument, the child function, to calculate the
-        duration of time.
-
-    - Args:
-        - child_function ([function]): the child function to execute
-
-    - Return:
-        - wrapper_function: tuple
-            - 0: child function name
-            - 1: duration the time function ran using time.perf_counter_ns
-            - 2: the child function return
-    """
-    # ~~~ #         timer function section
-    # using functools.wraps to pass along the child_function details
-    @wraps(func)
-    def wrapper_function(*args, **kwargs):
-        """The decorator time function. This is the encapsulating timer
-         functionthat takes one argument, the child function, to calculate the
-         duration of time.
-
-        - Args:
-            - child_function ([function]): the child function to execute
-
-        - Return:
-            - wrapper_function: tuple
-                - 0: child function name
-                - 1: duration the time function ran using time.monotonic
-                - 2: the child function return
-        """
-        t_start = perf_counter()
-        return_var = func(*args, **kwargs)
-        t_required = perf_counter() - t_start
-        return func.__name__, t_required, return_var
-    return wrapper_function
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def byte_notation(size: int, acc=2, ntn=0):
-    """Decimal Notation: take an integer, converts it to a string with the
-    requested decimal accuracy, and appends either single (default), double,
-    or full word character notation.
-
-    - Args:
-        - size (int): the size to convert
-        - acc (int, optional): number of decimal places to keep. Defaults to 2.
-        - ntn (int, optional): notation name length. Defaults to 0.
-
-    - Returns:
-        - [tuple]: 0 = original size int unmodified; 1 = string for printing
-    """
-    size_dict = {
-        1: ['B', 'B', 'bytes'],
-        1000: ['k', 'kB', 'kilobytes'],
-        1000000: ['M', 'MB', 'megabytes'],
-        1000000000: ['G', 'GB', 'gigabytes'],
-        1000000000000: ['T', 'TB', 'terabytes']
-    }
-    return_size_str = ''
-    for key, value in size_dict.items():
-        if (size / key) < 1000:
-            return_size_str = f'{size / key:,.{acc}f} {value[ntn]}'
-            return size, return_size_str
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-@perf_timer
-def tree_walk():
-    """Tree walks the source folder and populates several variables
-
-    Returns:
-        - tuple:
-            - walk_time:      float of time it took to tree walk
-            - walk_folders:   list of folders from the tree walk
-            - walk_files:     list of files from the tree walk
-            - data_size:      total size of all files
-    """
-    try:
-        walk_dirs_dict, walk_files_dict = dd(int), dd(int)
-        file_size, num_dirs, num_files = 0, 0, 0
-        # create exdir and exfile lists
-        if args.exdir:
-            exdir = args.exdir.split(',')
-        if args.exfile:
-            exfile = args.exfile.split(',')
-        for root, dirs, files, in os.walk(args.folder, topdown=True):
-            # strip excluded directories and files
-            if args.exdir:
-                dirs[:] = [d for d in dirs if d not in exdir]
-            if args.exfile:
-                files[:] = [f for f in files if f not in exfile]
-            # populate the directory list
-            for d in dirs:
-                dir_fullpath = os.path.join(root, d)
-                walk_dirs_dict[dir_fullpath] = os.stat(dir_fullpath).st_size
-                num_dirs += 1
-            # poopulate the file list
-            for f in files:
-                file_fullpath = os.path.join(root, f)
-                walk_files_dict[file_fullpath] = os.stat(file_fullpath).st_size
-                num_files += 1
-                file_size += os.stat(file_fullpath).st_size
-    except OSError as e:
-        bp([f'tree walk failure: {args.folder}\n{e}', Ct.RED], erl=2)
-
-    # return 101, walk_fol, walk_files, file_size, num_folders, num_files
-    return walk_dirs_dict, walk_files_dict, file_size, num_files, num_dirs
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-@perf_timer
-def size_comp(file_dict: dict):
-
-    # ~~~ #             -variables-
-    size_dict, dupe_dict_stage1 = dd(list), dd(list)
-    num_files, num_sizes = 0, 0
-
-    # ~~~ #             -dicts-
-    # create dict where size is the key, and the value is a list of file names
-    for k, v in file_dict.items():
-        size_dict[v].append(k)
-    # get a dict only containing files with matching sizes
-    for k, v in size_dict.items():
-        if len(v) > 1:
-            dupe_dict_stage1[k] = v
-            num_files += len(v)
-            num_sizes += 1
-    return dupe_dict_stage1, num_files, num_sizes
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-def hash_check(file: str, hash_variable):
-
-    # ~~~ #             -variables-
-    hf_var = (getattr(hashlib, hash_variable)())
-    try:
-        with open(file, 'rb') as f:
-            while True:
-                f_chunk = f.read(100000)
-                if not f_chunk:
-                    break
-                hf_var.update(f_chunk)
-        return hf_var.hexdigest()
-    except OSError as e:
-        bp([f'with file {file}.\n{e}', Ct.RED], erl=2)
-
-
-# ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-@perf_timer
-def hash_comp(file_dict: dict, file_count, hash_variable):
-
-    # ~~~ #             -variables-
-    hash_dict, dupe_dict_stage2 = dd(list), dd(list)
-    num_files, num_hashes, file_complete = 0, 0, 0
-
-    # ~~~ #             -dicts-
-    # create dict where hash is the key, and the value is a list of file names
-    for _, v in file_dict.items():
-        for file in v:
-            hash_return = hash_check(file, hash_variable)
-            hash_dict[hash_return].append(file)
-            file_complete += 1
-            bp(['\u001b[1000DHashing: ', Ct.A, f'{file_complete}', Ct.BBLUE,
-                '/', Ct.A, f'{file_count}', Ct.BBLUE], log=0, inl=1, num=0,
-                fls=1, fil=0)
-    bp(['\n', Ct.A], fil=0)
-    # get a dict only containing files with matching hash
-    for k, v in hash_dict.items():
-        if len(v) > 1:
-            dupe_dict_stage2[k] = v
-            num_files += len(v)
-            num_hashes += 1
-
-    return dupe_dict_stage2, num_files, num_hashes
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
@@ -291,33 +22,28 @@ def hash_comp(file_dict: dict, file_count, hash_variable):
 def out_file_check(dupe_f: int, dupe_h: int):
 
     # ~~~ #             -question-
-    if dupe_f > 100 and not args.log_file:
+    if dupe_f > 30 and not args.log_file:
         o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
-                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files. '
+                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files.\n\n'
                         'Dumping this many to the console might take a long '
                         'time but no log-file was specified. Do you want to '
                         f'output to {Ct.GREEN}C{Ct.A}onsole or specify '
                         f'{Ct.GREEN}L{Ct.A}og-file now?[{Ct.GREEN}C{Ct.A}/'
                         f'{Ct.GREEN}L{Ct.A}]: ')
         if o_check.lower() == 'l':
-            # TODO add checks here
-            bp_dict['log_file'] = input('File name: ')
+            f_temp = input('File name: ')
+            file_check(f_temp)
+            bp_dict['log_file'] = f_temp
         elif o_check.lower() != 'c':
             bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
             out_file_check(dupe_f, dupe_h)
-    elif dupe_f > 100:
-        o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
-                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files. '
-                        'Dumping this many to the console might take a long. '
-                        f'Do you want to output to {Ct.GREEN}C{Ct.A}onsole or '
-                        f'just the {Ct.GREEN}L{Ct.A}og-file?[{Ct.GREEN}C{Ct.A}'
-                        f'/{Ct.GREEN}L{Ct.A}]: ')
-        if o_check.lower() != 'c':
-            bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
-            out_file_check(dupe_f, dupe_h)
+    elif dupe_f < 30:
+        bp([f'Found {dupe_f} files that can be shrunk down to {dupe_h} files.'
+            f'\nSending to console and {bp_dict["log_file"]}.', Ct.A])
+        o_check = 'c'
     else:
         o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
-                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files. '
+                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files.\n\n'
                         f'Do you want to output to {Ct.GREEN}C{Ct.A}onsole or '
                         f'just the {Ct.GREEN}L{Ct.A}og-file?[{Ct.GREEN}C{Ct.A}'
                         f'/{Ct.GREEN}L{Ct.A}]: ')
@@ -346,87 +72,105 @@ def main():
     bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -tree walk-
-    walk_return = tree_walk()
+    walk_return = tree_walk(args.folder)
     tw_tup = walk_return[2]
     folder_total = f'{tw_tup[4]:,}'
     file_total = f'{tw_tup[3]:,}'
     file_size_total = byte_notation(tw_tup[2], ntn=1)
+    walk_time = f'{walk_return[1]:.4f}' if walk_return[1] < 10 else\
+        time_notation(walk_return[1])
     # print out the tree walk data
-    bp([f'Folders: {folder_total} | File Size: {file_size_total[1]:>10} | '
-        f'Files: {file_total}\nDuration: {walk_return[1]:,.4f}', Ct.A])
+    bp([f'Folders: {folder_total} | Files: {file_total} | '
+        f'File Size: {file_size_total[1]:>10}\nDuration: {walk_time}', Ct.A])
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -size comparison-
-    size_return = size_comp(tw_tup[1])
-    files_stage1_total = size_return[2][1]
-    sizes_stage1_total = size_return[2][2]
+    _, size_r_time, size_return = size_comp(tw_tup[1])
+    # print(size_return[1])
+    files_stage1 = size_return[1]['num_files']
+    sizes_stage1 = size_return[1]['num_sizes']
+    data_stage1 = size_return[1]['total_size']
+    dupe_stage1 = files_stage1 - sizes_stage1
+    size_time = f'{size_r_time:.4f}' if size_r_time < 10 else\
+        time_notation(size_r_time)
     # print out the size comp stage 1 comparison
     bp(['Stage ', Ct.GREEN, '1', Ct.BBLUE, ' (', Ct.GREEN, 'size', Ct.RED,
         ') Comparison:\n', Ct.GREEN], num=0)
-    bp([f'Total sizes with file matches: {sizes_stage1_total:,}\nTotal files '
-        f'with size matches: {files_stage1_total}\nDuration: '
-        f'{size_return[1]:,.4f}', Ct.A])
+    bp([f'Files with a size match: {files_stage1:,}\nNumber of size '
+        f'matches: {sizes_stage1}\nPotential duplicates: {dupe_stage1} files |'
+        f' {byte_notation(data_stage1, ntn=1)[1]}\n'
+        f'Duration: {size_time}', Ct.A])
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -sha256 comparison-
-    sha256_return = hash_comp(size_return[2][0], files_stage1_total, 'sha256')
-    files_stage2_total = sha256_return[2][1]
-    hashes_stage2_total = sha256_return[2][2]
-    dupe_files_stage2 = files_stage2_total - hashes_stage2_total
+    _, sha256_r_time, sha256_return = hash_comp(size_return[0], tw_tup[1],
+                                                files_stage1, 'sha256')
+    files_stage2 = sha256_return[1]['num_files']
+    hashes_stage2 = sha256_return[1]['num_hashes']
+    data_stage2 = sha256_return[1]['total_size']
+    dupe_stage2 = files_stage2 - hashes_stage2
+    sha256_time = f'{sha256_r_time:.4f}' if sha256_r_time < 10 else\
+        time_notation(sha256_r_time)
     # print out the hash comp stage 2 comparison
     bp(['Stage ', Ct.GREEN, '2', Ct.BBLUE, ' (', Ct.GREEN, 'sha256', Ct.RED,
         ') Comparison:\n', Ct.GREEN], num=0)
-    bp([f'Total hashes with file matches: {hashes_stage2_total:,}\n'
-        f'Total files with hash matches: '
-        f'{files_stage2_total}\nDuplicate files: {dupe_files_stage2}\n'
-        f'Duration: {sha256_return[1]:,.4f}', Ct.A])
+    bp([f'Files with a hash match: {files_stage2:,}\nNumber of hash '
+        f'matches: {hashes_stage2}\nHash Confirmed duplicates: '
+        f'{dupe_stage2} files | {byte_notation(data_stage2, ntn=1)[1]}\n'
+        f'Duration: {sha256_time}', Ct.A])
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -blake2b comparison-
-    files_stage3_total = 0
+    files_stage3 = 0
     if args.two_hash:
-        blake2b_return = hash_comp(size_return[2][0], files_stage1_total,
-                                   'blake2b')
-        files_stage3_total = blake2b_return[2][1]
-        hashes_stage3_total = blake2b_return[2][2]
-        dupe_files_stage3 = files_stage3_total - hashes_stage3_total
+        _, blake2b_r_time, blake2b_return = hash_comp(size_return[0],
+                                                      tw_tup[1], files_stage1,
+                                                      'blake2b')
+        files_stage3 = blake2b_return[1]['num_files']
+        hashes_stage3 = blake2b_return[1]['num_hashes']
+        data_stage3 = blake2b_return[1]['total_size']
+        dupe_stage3 = files_stage3 - hashes_stage3
+        blake2b_time = f'{blake2b_r_time:.4f}' if blake2b_r_time < 10\
+            else time_notation(blake2b_r_time)
         # print out the hash comp stage 2 comparison
         bp(['Stage ', Ct.GREEN, '3', Ct.BBLUE, ' (', Ct.GREEN, 'blake2b',
             Ct.RED, ') Comparison:\n', Ct.GREEN], num=0)
-        bp([f'Total hashes with file matches: {hashes_stage3_total:,}\nTotal '
-            f'files with hash matches: {files_stage3_total}\nDuplicate files: '
-            f'{dupe_files_stage3}\nDuration: {blake2b_return[1]:,.4f}', Ct.A])
+        bp([f'Files with a hash match: {files_stage3:,}\nNumber of hash '
+            f'matches: {hashes_stage3}\nHash Confirmed duplicates: '
+            f'{dupe_stage3} files | {byte_notation(data_stage3, ntn=1)[1]}\n'
+            f'Duration: {blake2b_time}', Ct.A])
         bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -aggregate-
-    hash_level = 3 if args.two_hash else 2
-    if hash_level == 3 and dupe_files_stage3 != dupe_files_stage2:
-        bp([f'hash mismatch!! Stage 2 found: {dupe_files_stage2} | Stage 3 '
-            f'found: {dupe_files_stage3}\nUsing Stage 3 data, but should be'
-            'verified.', Ct.YELLOW], err=1)
-        dupe_files = files_stage3_total
-        dupe_hashes = hashes_stage3_total
-        dupe_dict = blake2b_return[2][0]
-    elif hash_level == 3 and dupe_files_stage3 == dupe_files_stage2:
-        bp([f'Hash lists match. Stage 2 found: {dupe_files_stage2} | Stage 3 '
-            f'found: {dupe_files_stage3}\nUsing Stage 3 data with high '
+    hash_level = 2 if args.two_hash else 1
+    if hash_level == 2 and dupe_stage3 != dupe_stage2:
+        bp([f'hash mismatch!! Stage 2 found: {dupe_stage2} | Stage 3 '
+            f'found: {dupe_stage3}\nUsing Stage 3 data. blake2b has no '
+            'confirmed hash collisions. Data should be verified before '
+            'deleted.', Ct.YELLOW], err=1)
+        dupe_final = files_stage3
+        dupe_hashes = hashes_stage3
+        dupe_dict = blake2b_return[0]
+    elif hash_level == 2 and dupe_stage3 == dupe_stage2:
+        bp([f'Hash lists match. Stage 2 found: {dupe_stage2} | Stage 3 '
+            f'found: {dupe_stage3}\nUsing Stage 3 data with maximum '
             'confidence.', Ct.GREEN])
-        dupe_files = files_stage3_total
-        dupe_hashes = hashes_stage3_total
-        dupe_dict = blake2b_return[2][0]
+        dupe_final = files_stage3
+        dupe_hashes = hashes_stage3
+        dupe_dict = blake2b_return[0]
     else:
-        bp([f'Stage 2 found: {dupe_files_stage2}\nUsing Stage 2 data with '
-            'reasonable confidence.', Ct.GREEN])
-        dupe_files = files_stage2_total
-        dupe_hashes = hashes_stage2_total
-        dupe_dict = sha256_return[2][0]
+        bp([f'Stage 2 found: {dupe_stage2}\nUsing Stage 2 data with '
+            'high confidence.', Ct.GREEN])
+        dupe_final = files_stage2
+        dupe_hashes = hashes_stage2
+        dupe_dict = sha256_return[0]
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -input-
     if args.auto:
         con_out = 0
     else:
-        input_return = out_file_check(dupe_files, dupe_hashes)
+        input_return = out_file_check(dupe_final, dupe_hashes)
         if input_return[2].lower() == 'l':
             con_out = 0
         else:
@@ -435,7 +179,7 @@ def main():
 
     # ~~~ #             -output-
     bp([f'Files with duplicates: {dupe_hashes} | Total duplicates: '
-        f'{dupe_files - dupe_hashes}\n\n', Ct.A], con=con_out)
+        f'{dupe_final - dupe_hashes}\n', Ct.A], con=con_out)
     for k, v in dupe_dict.items():
         bp([f'{k}', Ct.A], num=0, con=con_out)
         for entry in v:
@@ -443,6 +187,9 @@ def main():
     bp([f'\n{"━" * 40}\n', Ct.A], log=0, con=con_out)
 
     # ~~~ #             -finish-
+    total_time = (perf_counter() - START_PROG_TIME - input_return[1])
+    if total_time > 10:
+        total_time = time_notation(total_time)
     bp(['Program complete\n\nDuration: '
         f'{perf_counter() - START_PROG_TIME - input_return[1]:.4f}', Ct.A])
 
@@ -450,15 +197,17 @@ def main():
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 if __name__ == '__main__':
 
-    # ~~~ #         args section
-    args = get_args()
-    validate_args()
+    # ~~~ #             -args-
+    args = options.args
+
+    # ~~~ #             -title-
+    bp([f'{options.ver} - {options.purpose}\n', Ct.BBLUE])
+
+    # ~~~ #             -validate-
+    fc_return = validate_and_process_args()
 
     # ~~~ #             -variables-
     bp_dict['color'] = 0 if args.no_color else 1
-    bp_dict['log_file'] = args.log_file
-
-    # ~~~ #         title section
-    bp([f'{ver} - {__purpose__}\n', Ct.BBLUE])
+    bp_dict['log_file'] = fc_return if fc_return else args.log_file
 
     main()
