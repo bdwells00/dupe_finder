@@ -29,6 +29,10 @@ def get_args():
                         help='automatically add the duplicated files to the'
                              'log file specified with "--log-file <filename>"',
                         action='store_true')
+    parser.add_argument('--enable-delete-files',
+                        help='interactive file deletion mode. DELETIONS ARE '
+                             'EXPIRAMENTAL!!',
+                        action='store_true')
     parser.add_argument('--exdir',
                         help='comma separated directories to exclude (no '
                              'spaces between directories)',
@@ -38,6 +42,15 @@ def get_args():
                         help='comma separated files to exclude (no spaces '
                              'between files)',
                         metavar=f'{Ct.GREEN}<file>,<file>{Ct.A}',
+                        type=str)
+    parser.add_argument('--json-output',
+                        help='json file to save duplicates into',
+                        metavar=f'{Ct.GREEN}<filename>{Ct.A}',
+                        type=str)
+    parser.add_argument('--json-input',
+                        help='json file to process for deletions. DELETIONS '
+                             'ARE EXPIRAMENTAL!!',
+                        metavar=f'{Ct.GREEN}<filename>{Ct.A}',
                         type=str)
     parser.add_argument('--log-file',
                         help='file to save output',

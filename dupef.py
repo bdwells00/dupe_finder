@@ -2,14 +2,14 @@
 
 from datetime import datetime
 from time import perf_counter
-from modules.argsval import validate_and_process_args, file_check
 from betterprint.betterprint import bp, bp_dict
 from betterprint.colortext import Ct
-from modules.filechecks import size_comp, hash_comp
-from modules.notations import byte_notation, time_notation
+from modules.argsval import validate_and_process_args
+from modules.filedelete import expiramental_file_deletion
+from modules.jsonfinder import save_json, import_json
+from modules.livefinder import live_duplicate_finder, out_file_check
+from modules.notations import time_notation
 import modules.options as options
-from modules.timer import perf_timer
-from modules.treewalk import tree_walk
 START_PROG_TIME = perf_counter()
 
 
@@ -18,39 +18,18 @@ start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
-@perf_timer
-def out_file_check(dupe_f: int, dupe_h: int):
-
-    # ~~~ #             -question-
-    if dupe_f > 30 and not args.log_file:
-        o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
-                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files.\n\n'
-                        'Dumping this many to the console might take a long '
-                        'time but no log-file was specified. Do you want to '
-                        f'output to {Ct.GREEN}C{Ct.A}onsole or specify '
-                        f'{Ct.GREEN}L{Ct.A}og-file now?[{Ct.GREEN}C{Ct.A}/'
-                        f'{Ct.GREEN}L{Ct.A}]: ')
-        if o_check.lower() == 'l':
-            f_temp = input('File name: ')
-            file_check(f_temp)
-            bp_dict['log_file'] = f_temp
-        elif o_check.lower() != 'c':
-            bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
-            out_file_check(dupe_f, dupe_h)
-    elif dupe_f < 30:
-        bp([f'Found {dupe_f} files that can be shrunk down to {dupe_h} files.'
-            f'\nSending to console and {bp_dict["log_file"]}.', Ct.A])
-        o_check = 'c'
+def del_check():
+    del_input = input('Proceed with interactive duplicate file removal? [Y/N]:'
+                      ' ')
+    if del_input.lower() == 'y':
+        return del_input
+    elif del_input.lower() == 'x':
+        return 'n'
+    elif del_input.lower() != 'n':
+        bp([f'{del_input} is neither "Y" nor "N".', Ct.YELLOW])
+        del_check()
     else:
-        o_check = input(f'Found {Ct.BBLUE}{dupe_f}{Ct.A} files that can be '
-                        f'shrunk down to {Ct.BBLUE}{dupe_h}{Ct.A} files.\n\n'
-                        f'Do you want to output to {Ct.GREEN}C{Ct.A}onsole or '
-                        f'just the {Ct.GREEN}L{Ct.A}og-file?[{Ct.GREEN}C{Ct.A}'
-                        f'/{Ct.GREEN}L{Ct.A}]: ')
-        if o_check.lower() != 'c' and o_check.lower() != 'l':
-            bp([f'{o_check} is not "C" or "L".', Ct.YELLOW], err=1, fil=0)
-            out_file_check(dupe_f, dupe_h)
-    return o_check
+        return del_input
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
@@ -71,106 +50,60 @@ def main():
                 bp([f' {k}: {v} |', Ct.A], inl=1, log=0)
     bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
 
-    # ~~~ #             -tree walk-
-    walk_return = tree_walk(args.folder)
-    tw_tup = walk_return[2]
-    folder_total = f'{tw_tup[4]:,}'
-    file_total = f'{tw_tup[3]:,}'
-    file_size_total = byte_notation(tw_tup[2], ntn=1)
-    walk_time = f'{walk_return[1]:.4f}' if walk_return[1] < 10 else\
-        time_notation(walk_return[1])
-    # print out the tree walk data
-    bp([f'Folders: {folder_total} | Files: {file_total} | '
-        f'File Size: {file_size_total[1]:>10}\nDuration: {walk_time}', Ct.A])
-    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
-
-    # ~~~ #             -size comparison-
-    _, size_r_time, size_return = size_comp(tw_tup[1])
-    # print(size_return[1])
-    files_stage1 = size_return[1]['num_files']
-    sizes_stage1 = size_return[1]['num_sizes']
-    data_stage1 = size_return[1]['total_size']
-    dupe_stage1 = files_stage1 - sizes_stage1
-    size_time = f'{size_r_time:.4f}' if size_r_time < 10 else\
-        time_notation(size_r_time)
-    # print out the size comp stage 1 comparison
-    bp(['Stage ', Ct.GREEN, '1', Ct.BBLUE, ' (', Ct.GREEN, 'size', Ct.RED,
-        ') Comparison:\n', Ct.GREEN], num=0)
-    bp([f'Files with a size match: {files_stage1:,}\nNumber of size '
-        f'matches: {sizes_stage1}\nPotential duplicates: {dupe_stage1} files |'
-        f' {byte_notation(data_stage1, ntn=1)[1]}\n'
-        f'Duration: {size_time}', Ct.A])
-    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
-
-    # ~~~ #             -sha256 comparison-
-    _, sha256_r_time, sha256_return = hash_comp(size_return[0], tw_tup[1],
-                                                files_stage1, 'sha256')
-    files_stage2 = sha256_return[1]['num_files']
-    hashes_stage2 = sha256_return[1]['num_hashes']
-    data_stage2 = sha256_return[1]['total_size']
-    dupe_stage2 = files_stage2 - hashes_stage2
-    sha256_time = f'{sha256_r_time:.4f}' if sha256_r_time < 10 else\
-        time_notation(sha256_r_time)
-    # print out the hash comp stage 2 comparison
-    bp(['Stage ', Ct.GREEN, '2', Ct.BBLUE, ' (', Ct.GREEN, 'sha256', Ct.RED,
-        ') Comparison:\n', Ct.GREEN], num=0)
-    bp([f'Files with a hash match: {files_stage2:,}\nNumber of hash '
-        f'matches: {hashes_stage2}\nHash Confirmed duplicates: '
-        f'{dupe_stage2} files | {byte_notation(data_stage2, ntn=1)[1]}\n'
-        f'Duration: {sha256_time}', Ct.A])
-    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
-
-    # ~~~ #             -blake2b comparison-
-    files_stage3 = 0
-    if args.two_hash:
-        _, blake2b_r_time, blake2b_return = hash_comp(size_return[0],
-                                                      tw_tup[1], files_stage1,
-                                                      'blake2b')
-        files_stage3 = blake2b_return[1]['num_files']
-        hashes_stage3 = blake2b_return[1]['num_hashes']
-        data_stage3 = blake2b_return[1]['total_size']
-        dupe_stage3 = files_stage3 - hashes_stage3
-        blake2b_time = f'{blake2b_r_time:.4f}' if blake2b_r_time < 10\
-            else time_notation(blake2b_r_time)
-        # print out the hash comp stage 2 comparison
-        bp(['Stage ', Ct.GREEN, '3', Ct.BBLUE, ' (', Ct.GREEN, 'blake2b',
-            Ct.RED, ') Comparison:\n', Ct.GREEN], num=0)
-        bp([f'Files with a hash match: {files_stage3:,}\nNumber of hash '
-            f'matches: {hashes_stage3}\nHash Confirmed duplicates: '
-            f'{dupe_stage3} files | {byte_notation(data_stage3, ntn=1)[1]}\n'
-            f'Duration: {blake2b_time}', Ct.A])
-        bp([f'\n{"━" * 40}\n', Ct.A], log=0)
-
-    # ~~~ #             -aggregate-
-    hash_level = 2 if args.two_hash else 1
-    if hash_level == 2 and dupe_stage3 != dupe_stage2:
-        bp([f'hash mismatch!! Stage 2 found: {dupe_stage2} | Stage 3 '
-            f'found: {dupe_stage3}\nUsing Stage 3 data. blake2b has no '
-            'confirmed hash collisions. Data should be verified before '
-            'deleted.', Ct.YELLOW], err=1)
-        dupe_final = files_stage3
-        dupe_hashes = hashes_stage3
-        dupe_dict = blake2b_return[0]
-    elif hash_level == 2 and dupe_stage3 == dupe_stage2:
-        bp([f'Hash lists match. Stage 2 found: {dupe_stage2} | Stage 3 '
-            f'found: {dupe_stage3}\nUsing Stage 3 data with maximum '
-            'confidence.', Ct.GREEN])
-        dupe_final = files_stage3
-        dupe_hashes = hashes_stage3
-        dupe_dict = blake2b_return[0]
+    if args.json_input:
+        dr_dict = import_json()
     else:
-        bp([f'Stage 2 found: {dupe_stage2}\nUsing Stage 2 data with '
-            'high confidence.', Ct.GREEN])
-        dupe_final = files_stage2
-        dupe_hashes = hashes_stage2
-        dupe_dict = sha256_return[0]
-    bp([f'\n{"━" * 40}\n', Ct.A], log=0)
+        dr_dict = live_duplicate_finder()
+
+    # ~~~ #             -variables-
+    out_dict = {
+        'dupe_dict': dr_dict['dupe_dict'],
+        'dupe_files': dr_dict['dupe_files'],
+        'dupe_hashes': dr_dict['dupe_hashes'],
+        'del_dict': dr_dict['dupe_dict'],
+        'del_time': 0.0,
+        'del_files': 0,
+        'del_hashes': 0,
+        'remaining_files': 0,
+        'remaining_hashes': 0
+    }
+
+    # ~~~ #             -file deletion-
+    if args.enable_delete_files and dr_dict['dupe_files'] > 0:
+        bp([f'{"*" * 50}\n* WARNING: FILE DELETION MODE IS EXPIRAMENTAL!!! *\n'
+            f'{"*" * 50}\n\nUse with caution.\nThis might delete the wrong '
+            'file or cause other irreparable harm.\nYou can exit file deletion'
+            'any time by pressing "X" or "CTRL + C"\n', Ct.RED])
+        del_check_return = del_check()
+        if del_check_return.lower() == 'y':
+            del_return = expiramental_file_deletion(dr_dict['dupe_dict'])
+            # out_dict['del_time'] = f'{del_return[1]:.4f}' if del_return[1] <\
+            #     10 else time_notation(del_return[1])
+            out_dict['del_time'] = del_return[1]
+            bp([f'Duration: {out_dict["del_time"]}', Ct.A])
+
+            out_dict['del_dict'] = del_return[2]
+            for k, v in out_dict['del_dict'].items():
+                if len(v) > 1:
+                    out_dict['remaining_files'] += len(v)
+                    out_dict['remaining_hashes'] += 1
+                else:
+                    out_dict['remaining_files'] += 1
+                    out_dict['remaining_hashes'] += 1
+
+            out_dict['del_files'] = dr_dict['dupe_files'] - \
+                out_dict['remaining_files']
+            out_dict['del_hashes'] = dr_dict['dupe_hashes'] - \
+                out_dict['remaining_hashes']
+        else:
+            bp(['Expiramental file deletion skipped.', Ct.A])
+        bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
     # ~~~ #             -input-
     if args.auto:
         con_out = 0
     else:
-        input_return = out_file_check(dupe_final, dupe_hashes)
+        input_return = out_file_check(out_dict)
         if input_return[2].lower() == 'l':
             con_out = 0
         else:
@@ -178,20 +111,28 @@ def main():
         bp([f'\n{"━" * 40}\n', Ct.A], log=0, fil=0)
 
     # ~~~ #             -output-
-    bp([f'Files with duplicates: {dupe_hashes} | Total duplicates: '
-        f'{dupe_final - dupe_hashes}\n', Ct.A], con=con_out)
-    for k, v in dupe_dict.items():
-        bp([f'{k}', Ct.A], num=0, con=con_out)
-        for entry in v:
-            bp([f'\t{entry}', Ct.GREEN], con=con_out)
+    # reprocess in case deletions
+    duplicates = out_dict["dupe_files"] - out_dict["dupe_hashes"]
+    bp([f'Found duplicates: {duplicates} | Deleted duplicates: '
+        f'{out_dict["del_files"]}\n\nDuplicates remaining: '
+        f'{duplicates - out_dict["del_files"]}', Ct.A],
+        con=con_out)
+    for k, v in out_dict['del_dict'].items():
+        if len(v) > 1:
+            bp([f'{k}', Ct.A], num=0, con=con_out)
+            for entry in v:
+                bp([f'\t{entry}', Ct.GREEN], con=con_out)
     bp([f'\n{"━" * 40}\n', Ct.A], log=0, con=con_out)
 
+    # ~~~ #             -JSON output-
+    if args.json_output:
+        save_json(out_dict['del_dict'])
+
     # ~~~ #             -finish-
-    total_time = (perf_counter() - START_PROG_TIME - input_return[1])
-    if total_time > 10:
-        total_time = time_notation(total_time)
-    bp(['Program complete\n\nDuration: '
-        f'{perf_counter() - START_PROG_TIME - input_return[1]:.4f}', Ct.A])
+    total_time = (perf_counter() - START_PROG_TIME)
+    bp([f'Program complete\n\nTotal Duration: {time_notation(total_time)}\n'
+        f'Input Time: {time_notation(input_return[1])}\nDeletion Time: '
+        f'{time_notation(out_dict["del_time"])}', Ct.A])
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #

@@ -7,6 +7,9 @@
         "elog",
         "exdir",
         "exfile",
+        "jsonf",
+        "jsonfinder",
         "onsole"
-    ]
+    ],
+    "python.pythonPath": ".venv\\Scripts\\python.exe"
 }

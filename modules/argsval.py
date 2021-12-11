@@ -16,7 +16,8 @@ def new_file():
 def file_check(f: str):
 
     if os.path.isfile(f):
-        check_append = input(f'{Ct.YELLOW}({f}) exists. Append? [Y/N]: {Ct.A}')
+        check_append = input(f'{Ct.YELLOW}({f}) exists. Overwrite? [Y/N]: '
+                             f'{Ct.A}')
         if check_append.lower() == 'n':
             check_new = input(f'{Ct.YELLOW}Provide a new file or exit? [N/X]: '
                               f'{Ct.A}')
@@ -52,15 +53,24 @@ def folder_validation(f, location):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def validate_and_process_args():
     """Validate the arparse args"""
-    # ~~~ #         folder validation section
+    # ~~~ #             -folder validation-
     if args.folder:
         folder_validation(args.folder, 'folder')
     else:
         bp(['target path not provided.', Ct.RED], err=2)
         sys.exit(1)
 
-    # ~~~ #         log file validation
+    # ~~~ #             -file validation-
     if args.log_file:
         file_return = file_check(args.log_file)
+    if args.json_output:
+        file_check(args.json_output)
+
+    # ~~~ #             -input validation-
+    if args.json_input:
+        if not os.path.isfile(args.json_input):
+            bp([f'{args.json_input} JSON file does not exist. Exiting.',
+                Ct.RED], err=2)
+            sys.exit(1)
 
     return file_return
