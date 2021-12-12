@@ -10,10 +10,10 @@ from modules.timer import perf_timer
 @perf_timer
 def size_comp(file_dict: dict):
 
-    # ~~~ #             -variables-
+    # ~~~ #                 -variables-
     size_dict, dupe_dict_stage1, data_dict = dd(list), dd(list), dd(int)
 
-    # ~~~ #             -dicts-
+    # ~~~ #                 -dicts-
     # create dict where size is the key, and the value is a list of file names
     for k, v in file_dict.items():
         size_dict[v].append(k)
@@ -31,7 +31,7 @@ def size_comp(file_dict: dict):
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def hash_check(file: str, hash_variable):
 
-    # ~~~ #             -variables-
+    # ~~~ #                 -variables-
     hf_var = (getattr(hashlib, hash_variable)())
     try:
         with open(file, 'rb') as f:
@@ -49,10 +49,10 @@ def hash_check(file: str, hash_variable):
 @perf_timer
 def hash_comp(file_dict: dict, size_dict: dict, file_count, hash_variable):
 
-    # ~~~ #             -variables-
+    # ~~~ #                 -variables-
     hash_dict, dupe_dict, data_dict = dd(list), dd(list), dd(int)
 
-    # ~~~ #             -dicts-
+    # ~~~ #                 -dicts-
     # create dict where hash is the key, and the value is a list of file names
     for k, v in file_dict.items():
         for file in v:

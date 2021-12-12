@@ -1,5 +1,5 @@
-#!/usr/bin/python3-64 -X utf8
-'''better print (bp) version 0.3.0'''
+#!/usr/bin/env python3
+'''better print (bp) version 0.3.1'''
 
 
 from datetime import datetime
@@ -8,7 +8,7 @@ from betterprint.colortext import Ct
 import betterprint.version as version
 
 
-# ~~~ #             -global variable-
+# ~~~ #                 -global variable-
 # global dict used to control bp functionality
 bp_dict = {
     'bp_tracker_all': 0,        # tracks all bp function calls
@@ -54,7 +54,7 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
                       and odd sections the Ct.color to apply to that string.
         - con  (int): (optional) 0 = no console output, 1 = console output.
                       (default)
-        - erl  (int): (optional) 0 = none (default), 1 = WARNING, 2 = ERROR:
+        - err  (int): (optional) 0 = none (default), 1 = WARNING, 2 = ERROR:
                       auto pre-pends ERROR: or WARNING:, colors line Red, and
                       allows routing of only these to error log if requested.
         - fil  (int): (optional) 0 = off, 1 (default)= on: setting zero skips
@@ -75,36 +75,36 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
     Return:
         - None
     """
-    # ~~~ #         -variables-
+    # ~~~ #             -variables-
     global bp_dict
     bp_local_dict = {
         'con_out': '',
         'file_out': ''
     }
 
-    # ~~~ #         -all print tracking-
+    # ~~~ #             -all print tracking-
     # track function call even if no output
     bp_dict['bp_tracker_all'] += 1
 
-    # ~~~ #         -validate verbosity-
+    # ~~~ #             -validate verbosity-
     if err == 0 or bp_dict['quiet'] == 1:
         if bp_dict['verbose'] < veb:
             return      # skip higher veb as long as no errors or in quiet mode
 
-    # ~~~ #         -validate txt list-
+    # ~~~ #             -validate txt list-
     # ensure each string has a color compliment within the list
     txt_l = len(txt)
     if txt_l % 2 != 0:
         raise Exception(f'{Ct.RED}"Better Print" (bp) function -> "txt: (list)'
                         f'": must be in pairs (txt length = {txt_l}){Ct.A}')
 
-    # ~~~ #         -veb-
+    # ~~~ #             -veb-
     # prepend INFO-L(x) to output
-    if veb > 0 and err == 0 and log == 0:
+    if veb > 0 and err == 0 and log > 0:
         bp_local_dict['con_out'] = f'INFO-L{veb}: '
         bp_local_dict['file_out'] = f'INFO-L{veb}: '
 
-    # ~~~ #         -err-
+    # ~~~ #             -err-
     # pre-pend Error or Warning, overwriting -veb- section
     if err == 1:
         bp_local_dict['con_out'] = f'{Ct.YELLOW}WARNING: {Ct.A}'
@@ -113,7 +113,7 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
         bp_local_dict['con_out'] = f'{Ct.RED}ERROR: {Ct.A}'
         bp_local_dict['file_out'] = 'ERROR: '
 
-    # ~~~ #         -colorize and assemble-
+    # ~~~ #             -colorize and assemble-
     # need enumerate to identify even entries that contain strings
     for idx, val in enumerate(txt):
         if idx % 2 == 0:
@@ -139,7 +139,7 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
             # file output is the original value with no console coloration
             bp_local_dict['file_out'] += val[:]
 
-    # ~~~ #         -log-
+    # ~~~ #             -log-
     # allow log=0 to bypass this
     if bp_dict['date_log'] == 1 and log == 1:
         dt_now = datetime.now().strftime('[%H:%M:%S]')
@@ -150,12 +150,12 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
             f'{dt_now}-{bp_dict["bp_tracker_log"] + 1}'
             f'-{bp_local_dict["file_out"]}')
 
-    # ~~~ #         -color-
+    # ~~~ #             -color-
     # after all colorization sections, set cli to file if no color desired
     if bp_dict['color'] == 0:
         bp_local_dict['con_out'] = bp_local_dict['file_out'][:]
 
-    # ~~~ #         -con-
+    # ~~~ #             -con-
     # skips con output if con=0
     if inl == 0 and con == 1:                   # default with new line
         sys.stdout.write(f'{bp_local_dict["con_out"]}\n')
@@ -168,7 +168,7 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
         sys.stdout.write(bp_local_dict['con_out'])
         sys.stdout.flush()
 
-    # ~~~ #         -file-
+    # ~~~ #             -file-
     try:
         # skip if file loging not requested or fil=0
         if bp_dict['log_file'] and fil == 1:
@@ -188,9 +188,9 @@ def bp(txt: list, con=bp_dict['con'], err=bp_dict['err'], fil=bp_dict['fil'],
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 if __name__ == '__main__':
 
-    # ~~~ #         -title- section
+    # ~~~ #             -title-
     bp([f'{version.ver} - {version.__purpose__}\n', Ct.BBLUE])
 
-    # ~~~ #         -exit- section
+    # ~~~ #             -exit-
     bp(['This module has no executable output. See the included examples.py '
         'for examples on how to use this module.'])

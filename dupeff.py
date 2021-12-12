@@ -1,6 +1,7 @@
-#!/usr/bin/python3-64 -X utf8
+#!/usr/bin/env python3
 
-from datetime import datetime
+from datetime import datetime, timedelta
+from math import ceil
 from time import perf_counter
 from betterprint.betterprint import bp, bp_dict
 from betterprint.colortext import Ct
@@ -8,17 +9,23 @@ from modules.argsval import validate_and_process_args
 from modules.filedelete import expiramental_file_deletion
 from modules.jsonfinder import save_json, import_json
 from modules.livefinder import live_duplicate_finder, out_file_check
-from modules.notations import time_notation
 import modules.options as options
 START_PROG_TIME = perf_counter()
 
 
-# ~~~ #             -global variables-
+# ~~~ #                     -global variables-
 start_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def del_check():
+    """Interactive input section to confirm cutomer wants to delete files even
+    though that is an expiramental feature.
+
+    Returns:
+        [string]: returns either 'y', 'n', or 'x'
+    """
+    # ~~~ #                 -input-
     del_input = input('Proceed with interactive duplicate file removal? [Y/N]:'
                       ' ')
     if del_input.lower() == 'y':
@@ -35,7 +42,7 @@ def del_check():
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def main():
 
-    # ~~~ #             -initial display-
+    # ~~~ #                 -initial display-
     bp([f'Program start: {start_time}\nFolder: ', Ct.A, f'{args.folder}\n',
         Ct.GREEN, 'Excluded Folders: ', Ct.A, f'{args.exdir}\n', Ct.GREEN,
         'Excluded Files: ', Ct.A, f'{args.exfile}', Ct.GREEN])
@@ -50,12 +57,14 @@ def main():
                 bp([f' {k}: {v} |', Ct.A], inl=1, log=0)
     bp([f'\n\n{"━" * 40}\n', Ct.A], log=0)
 
+    # ~~~ #                 -live or json-
     if args.json_input:
         dr_dict = import_json()
     else:
         dr_dict = live_duplicate_finder()
 
-    # ~~~ #             -variables-
+    # ~~~ #                 -variables-
+    # keep output variables in a single dict
     out_dict = {
         'dupe_dict': dr_dict['dupe_dict'],
         'dupe_files': dr_dict['dupe_files'],
@@ -68,7 +77,7 @@ def main():
         'remaining_hashes': 0
     }
 
-    # ~~~ #             -file deletion-
+    # ~~~ #                 -file deletion-
     if args.enable_delete_files and dr_dict['dupe_files'] > 0:
         bp([f'{"*" * 50}\n* WARNING: FILE DELETION MODE IS EXPIRAMENTAL!!! *\n'
             f'{"*" * 50}\n\nUse with caution.\nThis might delete the wrong '
@@ -76,12 +85,10 @@ def main():
             'any time by pressing "X" or "CTRL + C"\n', Ct.RED])
         del_check_return = del_check()
         if del_check_return.lower() == 'y':
+            # delete files
             del_return = expiramental_file_deletion(dr_dict['dupe_dict'])
-            # out_dict['del_time'] = f'{del_return[1]:.4f}' if del_return[1] <\
-            #     10 else time_notation(del_return[1])
             out_dict['del_time'] = del_return[1]
             bp([f'Duration: {out_dict["del_time"]}', Ct.A])
-
             out_dict['del_dict'] = del_return[2]
             for k, v in out_dict['del_dict'].items():
                 if len(v) > 1:
@@ -99,7 +106,7 @@ def main():
             bp(['Expiramental file deletion skipped.', Ct.A])
         bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
-    # ~~~ #             -input-
+    # ~~~ #                 -input-
     if args.auto:
         con_out = 0
     else:
@@ -110,8 +117,8 @@ def main():
             con_out = 1
         bp([f'\n{"━" * 40}\n', Ct.A], log=0, fil=0)
 
-    # ~~~ #             -output-
-    # reprocess in case deletions
+    # ~~~ #                 -output-
+    # reprocess in case of deletions
     duplicates = out_dict["dupe_files"] - out_dict["dupe_hashes"]
     bp([f'Found duplicates: {duplicates} | Deleted duplicates: '
         f'{out_dict["del_files"]}\n\nDuplicates remaining: '
@@ -121,34 +128,40 @@ def main():
         if len(v) > 1:
             bp([f'{k}', Ct.A], num=0, con=con_out)
             for entry in v:
-                bp([f'\t{entry}', Ct.GREEN], con=con_out)
+                bp([f'\t{entry}', Ct.GREEN], num=0, con=con_out)
     bp([f'\n{"━" * 40}\n', Ct.A], log=0, con=con_out)
 
-    # ~~~ #             -JSON output-
+    # ~~~ #                 -json output-
     if args.json_output:
-        save_json(out_dict['del_dict'])
+        save_json(out_dict['del_dict'], options.json_output)
 
-    # ~~~ #             -finish-
+    # ~~~ #                 -finish-
     total_time = (perf_counter() - START_PROG_TIME)
-    bp([f'Program complete\n\nTotal Duration: {time_notation(total_time)}\n'
-        f'Input Time: {time_notation(input_return[1])}\nDeletion Time: '
-        f'{time_notation(out_dict["del_time"])}', Ct.A])
+    program_time = total_time - input_return[1] - out_dict['del_time']
+    bp(['Program complete\n\n'
+        f'{timedelta(seconds=ceil(total_time))} - Total Duration\n'
+        f'{timedelta(seconds=ceil(input_return[1]))} - Input Time\n'
+        f'{timedelta(seconds=ceil(out_dict["del_time"]))} - Deletion Time\n'
+        f'{timedelta(seconds=ceil(program_time))} - Program Overhead Time',
+        Ct.A])
 
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 if __name__ == '__main__':
 
-    # ~~~ #             -args-
+    # ~~~ #                 -args-
     args = options.args
 
-    # ~~~ #             -title-
+    # ~~~ #                 -title-
     bp([f'{options.ver} - {options.purpose}\n', Ct.BBLUE])
 
-    # ~~~ #             -validate-
-    fc_return = validate_and_process_args()
+    # ~~~ #                 -validate-
+    val_args_dict = validate_and_process_args()
 
-    # ~~~ #             -variables-
+    # ~~~ #                 -variables-
     bp_dict['color'] = 0 if args.no_color else 1
-    bp_dict['log_file'] = fc_return if fc_return else args.log_file
+    bp_dict['log_file'] = val_args_dict['log_file']
+    options.json_input = val_args_dict['json_input']
+    options.json_output = val_args_dict['json_output']
 
     main()

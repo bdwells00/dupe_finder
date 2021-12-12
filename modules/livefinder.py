@@ -1,9 +1,11 @@
 
+from datetime import timedelta
+from math import ceil
 from betterprint.betterprint import bp, bp_dict
 from betterprint.colortext import Ct
 from modules.argsval import file_check
 from modules.filechecks import size_comp, hash_comp
-from modules.notations import byte_notation, time_notation
+from modules.notations import byte_notation
 from modules.options import args
 from modules.timer import perf_timer
 from modules.treewalk import tree_walk
@@ -12,8 +14,15 @@ from modules.treewalk import tree_walk
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 @perf_timer
 def out_file_check(out_dict: dict):
+    """Input section to verify console output.
 
-    # ~~~ #             -question-
+    - Args:
+        - out_dict (dict): dictionary used for displaying variables
+
+    - Returns:
+        - [str]: 'l' for logfile, 'c' for console
+    """
+    # ~~~ #                 -question-
     if out_dict['remaining_files'] > 30 and not args.log_file:
         o_check = input(f'Found {Ct.BBLUE}{out_dict["remaining_files"]}{Ct.A} '
                         f'files that can be shrunk down to {Ct.BBLUE}'
@@ -52,7 +61,15 @@ def out_file_check(out_dict: dict):
 
 # ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~ #
 def live_duplicate_finder():
-    # ~~~ #             -tree walk-
+    """Main section that scans a folder structure looking for duplicates.
+
+    - Returns:
+        - [dict]: a dict with 3 entries
+            - dupe_dict   - dict (k=hex, v=list of files sharing that hex)
+            - dupe_files  - int (total number of duplicate files)
+            - dupe_hashes - int (total number of unique files that have copies)
+    """
+    # ~~~ #                 -tree walk-
     bp(['Stage ', Ct.GREEN, '0', Ct.BBLUE, ' (', Ct.GREEN, 'scan', Ct.RED,
         ') Tree Walk:\n', Ct.GREEN], num=0)
 
@@ -62,20 +79,21 @@ def live_duplicate_finder():
     file_total = f'{tw_tup[3]:,}'
     file_size_total = byte_notation(tw_tup[2], ntn=1)
     walk_time = f'{walk_return[1]:.4f}' if walk_return[1] < 10 else\
-        time_notation(walk_return[1])
+        timedelta(seconds=ceil(walk_return[1]))
     # print out the tree walk data
     bp([f'Folders: {folder_total} | Files: {file_total} | '
         f'File Size: {file_size_total[1]:>10}\nDuration: {walk_time}', Ct.A])
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
-    # ~~~ #             -size comparison-
+    # ~~~ #                 -stage 1 (size)-
+    # quick scan to eliminate unique file sizes that don't need hashing
     _, size_r_time, size_return = size_comp(tw_tup[1])
     files_stage1 = size_return[1]['num_files']
     sizes_stage1 = size_return[1]['num_sizes']
     data_stage1 = size_return[1]['total_size']
     dupe_stage1 = files_stage1 - sizes_stage1
     size_time = f'{size_r_time:.4f}' if size_r_time < 10 else\
-        time_notation(size_r_time)
+        timedelta(seconds=ceil(size_r_time))
     # print out the size comp stage 1 comparison
     bp(['Stage ', Ct.GREEN, '1', Ct.BBLUE, ' (', Ct.GREEN, 'size', Ct.RED,
         ') Comparison:\n', Ct.GREEN], num=0)
@@ -85,7 +103,8 @@ def live_duplicate_finder():
         f'Duration: {size_time}', Ct.A])
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
-    # ~~~ #             -sha256 comparison-
+    # ~~~ #                 -stage 2 (sha256)-
+    # really all that is needed and has cpu boost, but extremely rare collision
     _, sha256_r_time, sha256_return = hash_comp(size_return[0], tw_tup[1],
                                                 files_stage1, 'sha256')
     files_stage2 = sha256_return[1]['num_files']
@@ -93,7 +112,7 @@ def live_duplicate_finder():
     data_stage2 = sha256_return[1]['total_size']
     dupe_stage2 = files_stage2 - hashes_stage2
     sha256_time = f'{sha256_r_time:.4f}' if sha256_r_time < 10 else\
-        time_notation(sha256_r_time)
+        timedelta(seconds=ceil(sha256_r_time))
     # print out the hash comp stage 2 comparison
     bp(['Stage ', Ct.GREEN, '2', Ct.BBLUE, ' (', Ct.GREEN, 'sha256', Ct.RED,
         ') Comparison:\n', Ct.GREEN], num=0)
@@ -103,7 +122,8 @@ def live_duplicate_finder():
         f'Duration: {sha256_time}', Ct.A])
     bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
-    # ~~~ #             -blake2b comparison-
+    # ~~~ #                 -stage 3 (blake2b) optional-
+    # slower 64-bit hash (no cpu boost) that has no known collisions
     files_stage3 = 0
     if args.two_hash:
         _, blake2b_r_time, blake2b_return = hash_comp(size_return[0],
@@ -114,8 +134,8 @@ def live_duplicate_finder():
         data_stage3 = blake2b_return[1]['total_size']
         dupe_stage3 = files_stage3 - hashes_stage3
         blake2b_time = f'{blake2b_r_time:.4f}' if blake2b_r_time < 10\
-            else time_notation(blake2b_r_time)
-        # print out the hash comp stage 2 comparison
+            else timedelta(seconds=ceil(blake2b_r_time))
+        # print out the hash comp stage 3 comparison
         bp(['Stage ', Ct.GREEN, '3', Ct.BBLUE, ' (', Ct.GREEN, 'blake2b',
             Ct.RED, ') Comparison:\n', Ct.GREEN], num=0)
         bp([f'Files with a hash match: {files_stage3:,}\nNumber of hash '
@@ -124,8 +144,9 @@ def live_duplicate_finder():
             f'Duration: {blake2b_time}', Ct.A])
         bp([f'\n{"━" * 40}\n', Ct.A], log=0)
 
-    # ~~~ #             -aggregate-
+    # ~~~ #                 -aggregate-
     hash_level = 2 if args.two_hash else 1
+    # if blake2b does not match sha256
     if hash_level == 2 and dupe_stage3 != dupe_stage2:
         bp([f'hash mismatch!! Stage 2 found: {dupe_stage2} | Stage 3 '
             f'found: {dupe_stage3}\nUsing Stage 3 data. blake2b has no '
@@ -134,6 +155,7 @@ def live_duplicate_finder():
         dupe_files = files_stage3
         dupe_hashes = hashes_stage3
         dupe_dict = blake2b_return[0]
+    # blake2b and sha256 match
     elif hash_level == 2 and dupe_stage3 == dupe_stage2:
         bp([f'Hash lists match. Stage 2 found: {dupe_stage2} | Stage 3 '
             f'found: {dupe_stage3}\nUsing Stage 3 data with maximum '
@@ -141,6 +163,7 @@ def live_duplicate_finder():
         dupe_files = files_stage3
         dupe_hashes = hashes_stage3
         dupe_dict = blake2b_return[0]
+    # sha256 only
     else:
         bp([f'Stage 2 found: {dupe_stage2}\nUsing Stage 2 data with '
             'high confidence.', Ct.GREEN])

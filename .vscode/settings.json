@@ -3,6 +3,7 @@
         "argsval",
         "BBLUE",
         "BGREEN",
+        "dedupe",
         "dupef",
         "elog",
         "exdir",

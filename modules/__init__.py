@@ -1,10 +1,18 @@
 '''
 - dupeff.py             duplicate file finder
+- betterprint
+    - __init__.py           this file
+    - betterprint.py        the better print (bp) module
+    - colortext.py          the colorized text module
+    - version.py            better print (bp) version
 - modules               folder to hold dupeff modules
     - __init__.py       this file
     - argsval.py        validate arguments
     - arguments.py      argparse cli arguments
     - filechecks.py     size and hash logic to find duplicates
+    - filedelete.py     interactive deletion module
+    - jsonfinder.py     input/output json of duplicate files
+    - livefinder.py     the live duplicate folder scanner
     - notations.py      simple B/kB/MB/GB/TB converter for raw byte input
     - options.py        global options that can be imported by other modules
     - timer.py          timing decorator using time.perf_counter
